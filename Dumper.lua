@@ -1,4 +1,5 @@
-local filename = "RemoteDump_" .. os.date("%Y%m%d_%H%M%S") .. ".txt"
+local dateStr = (os.date and os.date("%Y%m%d_%H%M%S")) or tostring(os.time())
+local filename = "RemoteDump_" .. dateStr .. ".txt"
 local function Log(msg)
 	print(msg)
 	if writefile then
