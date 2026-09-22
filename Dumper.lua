@@ -3,7 +3,7 @@ local filename = "RemoteDump_" .. game.PlaceId .. "_" .. os.date("%Y%m%d_%H%M%S"
 local function Log(msg)
 	print(msg)
 	if writefile then
-		local success, err = pcall(function()
+		local ok, err = pcall(function()
 			if readfile and pcall(readfile, filename) then
 				if appendfile then
 					appendfile(filename, msg .. "\n")
@@ -15,91 +15,114 @@ local function Log(msg)
 				writefile(filename, msg .. "\n")
 			end
 		end)
-		if not success then warn("File error: " .. tostring(err)) end
+		if not ok then warn("File glitch: " .. tostring(err)) end
 	end
 end
 
 local function SerializeArgs(args)
 	local result = {}
 	for i = 1, #args do
-		if i > 10 then
-			table.insert(result, "...")
-			break
+		local val = args[i]
+		if val == nil then
+			table.insert(result, "#nil")
+			goto continue
 		end
-		local arg = args[i]
-		local t = type(arg)
+		
+		local t = type(val)
+		
 		if t == "string" then
-			table.insert(result, '"' .. arg:sub(1, 50) .. '"')
-		elseif t == "number" then
-			table.insert(result, tostring(arg))
-		elseif t == "boolean" then
-			table.insert(result, tostring(arg))
-		elseif t == "table" then
-			table.insert(result, "{table}")
-		else
-			table.insert(result, "[" .. t .. "]")
+			table.insert(result, '"' .. val:sub(1, math.min(#val, 50)) .. '"')
+			goto continue
 		end
+		
+		if t == "number" then
+			table.insert(result, tostring(val))
+			goto continue
+		end
+		
+
+		if t == "boolean" then
+			table.insert(result, tostring(val))
+			goto continue
+		end
+		
+	
+		if t == "table" then
+			local tblStr = "{"
+			
+			tblStr = tblStr .. tostring((val[1])) 
+			
+			for j = 2, #val do
+				tblStr = tblStr .. "," .. tostring(val[j])
+			end
+			
+			tblStr = tblStr .. "}"
+			result[#result + 1] = tblStr
+			goto continue
+		end
+		
+		
+		table.insert(result, "[" .. t .. "]")
+	
+	::continue::
 	end
+	
 	return table.concat(result, ", ")
-end
 
--- Weakly reference our collections so transient parts don't clog memory
-local Events   = setmetatable({}, { __mode = "k" })
-local Functions = setmetatable({}, { __mode = "k" })
 
--- Grab ALL current instances of each class (handles things created via GetDescendants later too)
-function Events:GetAllInstances(cls) cls = cls or nil; return cls and cls:IsA("RemoteEvent") and true else false end
+local Remotes = { Events = {}, Functions = {} }
+
 for _, obj in ipairs(game:GetDescendants()) do
 	if obj:IsA("RemoteEvent") then
 		Log("[RemoteEvent]" .. obj:GetFullName())
-		Events[obj] = obj -- insert directly into the weak-set
+		table.insert(Remotes.Events, obj)
+		
+		local orig = obj.FireServer
+		obj.FireServer = function(self, ...)
+			Log("[FIRE]" .. obj:GetFullName() .. "|" .. SerializeArgs({ ... }))
+			return orig(self, ...)
+		end
+		
 	elseif obj:IsA("RemoteFunction") then
 		Log("[RemoteFunction]" .. obj:GetFullName())
-		Functions[obj] = obj
+		table.insert(Remotes.Functions, obj)
+		
+		local orig = obj.InvokeServer
+		obj.InvokeServer = function(self, ...)
+			Log("[INVOKE]" .. obj:GetFullName() .. "|" .. SerializeArgs({ ... }))
+			return orig(self, ...)
+		end
 	end
-end
-
--- Wrap FireServer/InvokeServer so every call logs nicely
-for obj, _ in pairs(Events) do
-	obj.FireServer = function(self, ...)
-		Log("[FIRE]" .. obj:GetFullName() .. "|" .. SerializeArgs({...}))
-		return obj._orig(self, ...)
-	end
-	obj._orig = obj.FireServer -- stash original handler
-end
-
-for obj, _ in pair(Functions) do
-	obj.InvokeServer = function(self, ...)
-		Log("[INVOKE]" .. obj:GetFullName() .. "|" .. SerializeArgs({...}))
-		return obj._orig(self, ...)
-	end
-	obj._orig = obj.InvokeServer
 end
 
 Log("")
-Log("Total Events captured:" .. #Events)
-Log("Total Functions captured:" .. #Functions)
-Log("Output file:" .. filename)
-Log("Watching for new spawns...")
+Log("Events:" .. #Remotes.Events)
+Log("Functions:" .. #Remotes.Functions)
+Log("Target file:" .. filename)
+Log("Live monitoring enabled...")
 
+-- Hook new descendants as they appear
 game.DescendantAdded:Connect(function(obj)
 	if obj:IsA("RemoteEvent") then
-		Log("[NEW Event]" .. obj:GetFullName())
-		Events[obj] = obj
+		Log("[New Event]" .. obj:GetFullName())
+		table.insert(Remotes.Events, obj)
+		
+		local orig = obj.FireServer
 		obj.FireServer = function(self, ...)
-			Log("[FIRE]" .. obj:GetFullName() .. "|" .. SerializeArgs({...}))
-			return obj._orig(self, ...)
+			Log("[FIRE]" .. obj:GetFullName() .. "|" .. SerializeArgs({ ... }))
+			return orig(self, ...)
 		end
-		obj._orig = obj.FireServer
+		
 	elseif obj:IsA("RemoteFunction") then
-		Log("[NEW Function]" .. obj:GetFullName())
-		Functions[obj] = obj
+		Log("[New Function]" .. obj:GetFullName())
+		table.insert(Remotes.Functions, obj)
+		
+		local orig = obj.InvokeServer
 		obj.InvokeServer = function(self, ...)
-			Log("[INVOKE]" .. obj:GetFullName() .. "|" .. SerializeArgs({...}))
-			return obj._orig(self, ...)
+			Log("[INVOKE]" .. obj:GetFullName() .. "|" .. SerializeArgs({ ... }))
+			return orig(self, ...)
 		end
-		obj._orig = obj.InvokeServer
 	end
 end)
 
-return Events, Functions
+return Remotes
