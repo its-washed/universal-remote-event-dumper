@@ -1,5 +1,4 @@
-local filename = "RemoteDump_" .. game.PlaceId .. "_" .. os.date("%Y%m%d_%H%M%S") .. ".txt"
-
+local filename = "RemoteDump_" .. os.date("%Y%m%d_%H%M%S") .. ".txt"
 local function Log(msg)
 	print(msg)
 	if writefile then
