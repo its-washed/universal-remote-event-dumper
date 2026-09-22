@@ -2,10 +2,13 @@ local filename = string.format("RemoteDump_%d_%s.txt", game.PlaceId, os.date("%Y
 local Output = {}
 local Remotes = {Events = {}, Functions = {}, All = {}}
 
+local hasWritefile = type(writefile) == "function"
+local hasAppendfile = type(appendfile) == "function"
+
 local function Log(msg)
     table.insert(Output, msg)
     print(msg)
-    if appendfile then
+    if hasAppendfile then
         appendfile(filename, msg .. "\n")
     end
 end
@@ -34,7 +37,9 @@ local function SerializeArgs(args)
         elseif t == "table" then
             result[i] = "{table:" .. tostring(#arg) .. "}"
         elseif t == "userdata" then
-            result[i] = "[" .. tostring(arg):match("^%w+") .. "]"
+            local str = tostring(arg)
+            local match = str:match("^%w+")
+            result[i] = "[" .. (match or "userdata") .. "]"
         else
             result[i] = "[" .. t .. "]"
         end
@@ -46,9 +51,11 @@ local function SerializeArgs(args)
 end
 
 local function ScanObject(obj)
+    if not obj or not obj.IsA then return false end
+    
     local info = {
         Object = obj,
-        Name = obj.Name,
+        Name = tostring(obj.Name),
         Path = GetFullPath(obj),
         Calls = 0
     }
@@ -88,69 +95,85 @@ local function ScanObject(obj)
     elseif obj:IsA("BindableFunction") then
         info.Type = "BindableFunction"
         table.insert(Remotes.All, info)
+    else
+        return false
     end
     
-    return info.Type ~= nil
+    return true
 end
 
 local function RecursiveScan(parent, depth)
     depth = depth or 0
     if depth > 15 then return end
+    if not parent or not parent.GetChildren then return end
     
-    for _, child in ipairs(parent:GetChildren()) do
+    local children = parent:GetChildren()
+    for i = 1, #children do
+        local child = children[i]
         ScanObject(child)
         RecursiveScan(child, depth + 1)
     end
 end
 
-if writefile then
-    writefile(filename, "UNIVERSAL REMOTE DUMPER\nGame: " .. game.Name .. "\nPlace ID: " .. game.PlaceId .. "\nTime: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n" .. string.rep("=", 70) .. "\n\n")
+if hasWritefile then
+    local header = "UNIVERSAL REMOTE DUMPER\nGame: " .. tostring(game.Name) .. "\nPlace ID: " .. tostring(game.PlaceId) .. "\nTime: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n" .. string.rep("=", 70) .. "\n\n"
+    writefile(filename, header)
 end
 
 Log(string.rep("=", 70))
 Log("UNIVERSAL REMOTE DUMPER")
 Log(string.rep("=", 70))
 
-for _, service in ipairs(game:GetChildren()) do
-    pcall(function()
-        RecursiveScan(service)
+local services = game:GetChildren()
+for i = 1, #services do
+    local success = pcall(function()
+        RecursiveScan(services[i])
     end)
 end
 
-Log("\n[REMOTE EVENTS] Total: " .. #Remotes.Events)
+Log("\n[REMOTE EVENTS] Total: " .. tostring(#Remotes.Events))
 Log(string.rep("-", 70))
-for i, info in ipairs(Remotes.Events) do
+for i = 1, #Remotes.Events do
+    local info = Remotes.Events[i]
     Log(string.format("  %d. %s", i, info.Name))
     Log(string.format("     Path: %s", info.Path))
     Log("")
 end
 
-Log("[REMOTE FUNCTIONS] Total: " .. #Remotes.Functions)
+Log("[REMOTE FUNCTIONS] Total: " .. tostring(#Remotes.Functions))
 Log(string.rep("-", 70))
-for i, info in ipairs(Remotes.Functions) do
+for i = 1, #Remotes.Functions do
+    local info = Remotes.Functions[i]
     Log(string.format("  %d. %s", i, info.Name))
     Log(string.format("     Path: %s", info.Path))
     Log("")
 end
 
 local bindables = {}
-for _, info in ipairs(Remotes.All) do
+for i = 1, #Remotes.All do
+    local info = Remotes.All[i]
     if info.Type == "BindableEvent" or info.Type == "BindableFunction" then
         table.insert(bindables, info)
     end
 end
 
-Log("[BINDABLES] Total: " .. #bindables)
+Log("[BINDABLES] Total: " .. tostring(#bindables))
 Log(string.rep("-", 70))
-for i, info in ipairs(bindables) do
+for i = 1, #bindables do
+    local info = bindables[i]
     Log(string.format("  %d. [%s] %s -> %s", i, info.Type, info.Name, info.Path))
 end
 
 Log("\n" .. string.rep("=", 70))
-Log(string.format("TOTAL CAPTURED: %d", #Remotes.All))
+Log("TOTAL CAPTURED: " .. tostring(#Remotes.All))
 Log(string.rep("=", 70))
 Log("[ACTIVE] Monitoring ALL remote calls...")
-Log(string.format("[FILE] %s", filename))
+
+if hasWritefile or hasAppendfile then
+    Log("[FILE] " .. filename)
+else
+    Log("[WARNING] File functions not available - console only")
+end
 
 game.DescendantAdded:Connect(function(descendant)
     if ScanObject(descendant) then
