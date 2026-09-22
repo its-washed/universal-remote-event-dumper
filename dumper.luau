@@ -5,6 +5,9 @@ local Remotes = {Events = {}, Functions = {}, All = {}}
 local function Log(msg)
     table.insert(Output, msg)
     print(msg)
+    if appendfile then
+        appendfile(filename, msg .. "\n")
+    end
 end
 
 local function GetFullPath(obj)
@@ -61,9 +64,6 @@ local function ScanObject(obj)
             local args = {...}
             local logMsg = string.format("[EVENT] %s | Args: %s", info.Path, SerializeArgs(args))
             Log(logMsg)
-            if appendfile then
-                appendfile(filename, logMsg .. "\n")
-            end
             return oldFire(self, ...)
         end
         
@@ -78,9 +78,6 @@ local function ScanObject(obj)
             local args = {...}
             local logMsg = string.format("[FUNCTION] %s | Args: %s", info.Path, SerializeArgs(args))
             Log(logMsg)
-            if appendfile then
-                appendfile(filename, logMsg .. "\n")
-            end
             return oldInvoke(self, ...)
         end
         
@@ -106,12 +103,12 @@ local function RecursiveScan(parent, depth)
     end
 end
 
+if writefile then
+    writefile(filename, "UNIVERSAL REMOTE DUMPER\nGame: " .. game.Name .. "\nPlace ID: " .. game.PlaceId .. "\nTime: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n" .. string.rep("=", 70) .. "\n\n")
+end
+
 Log(string.rep("=", 70))
-Log("           UNIVERSAL REMOTE DUMPER - FILE OUTPUT")
-Log(string.rep("=", 70))
-Log(string.format("Game Place ID: %s", tostring(game.PlaceId)))
-Log(string.format("Game Name: %s", game.Name))
-Log(string.format("Timestamp: %s", os.date("%Y-%m-%d %H:%M:%S")))
+Log("UNIVERSAL REMOTE DUMPER")
 Log(string.rep("=", 70))
 
 for _, service in ipairs(game:GetChildren()) do
@@ -152,23 +149,12 @@ end
 Log("\n" .. string.rep("=", 70))
 Log(string.format("TOTAL CAPTURED: %d", #Remotes.All))
 Log(string.rep("=", 70))
-Log("[ACTIVE] Monitoring ALL remote calls in real-time...")
-Log(string.format("[FILE] Saving to: %s", filename))
-
-if writefile then
-    writefile(filename, table.concat(Output, "\n") .. "\n\n--- LIVE LOG ---\n")
-    Log(string.format("[SUCCESS] File created: %s", filename))
-else
-    Log("[ERROR] writefile not available - file not saved")
-end
+Log("[ACTIVE] Monitoring ALL remote calls...")
+Log(string.format("[FILE] %s", filename))
 
 game.DescendantAdded:Connect(function(descendant)
     if ScanObject(descendant) then
-        local msg = string.format("[NEW %s] %s", descendant.ClassName, GetFullPath(descendant))
-        Log(msg)
-        if appendfile then
-            appendfile(filename, msg .. "\n")
-        end
+        Log(string.format("[NEW %s] %s", descendant.ClassName, GetFullPath(descendant)))
     end
 end)
 
